@@ -79,6 +79,13 @@ function buildPrompt(channel: MarketingChannel, meta: CrawlMeta): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Simple API key protection for public endpoints
+  const provided = request.headers.get('x-api-key') ?? '';
+  const expected = process.env.PUBLIC_API_KEY ?? '';
+  if (!expected || provided !== expected) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   let body: { channel: MarketingChannel; meta: CrawlMeta };
   try {
     body = await request.json();
@@ -159,15 +166,26 @@ export async function POST(request: NextRequest) {
                     ),
                   );
                 }
-              } catch {
+              } catch (err) {
                 // ignore parse errors for incomplete lines
               }
             }
           }
+        } catch (err) {
+          // forward an error frame to the consumer before closing
+          try {
+            controller.enqueue(
+              new TextEncoder().encode(
+                JSON.stringify({ error: "stream_error", detail: String(err) }) + "\n",
+              ),
+            );
+          } catch {}
         } finally {
-          reader.releaseLock();
+          try {
+            reader.releaseLock();
+          } catch {}
+          controller.close();
         }
-        controller.close();
       },
     });
 
