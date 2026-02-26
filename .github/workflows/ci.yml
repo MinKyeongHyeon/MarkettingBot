@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Enable corepack & pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (workspace)
+        run: pnpm -w run build
+
+      - name: Typecheck
+        run: pnpm -w exec tsc -p . --noEmit
+
+      - name: Server smoke test
+        run: |
+          # Start the built server in background and check /health
+          node apps/server/dist/index.js &
+          pid=$!
+          sleep 2
+          curl -fS http://localhost:3001/health
+          kill $pid || true
+
+      - name: Upload build artifacts (optional)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            apps/web/.next
+            apps/server/dist
