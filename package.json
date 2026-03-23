@@ -2,24 +2,16 @@
   "name": "marketting-bot",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "test:ollama": "node scripts/test-ollama.mjs",
-    "test:api": "node scripts/test-generate-api.mjs"
-  },
-  "dependencies": {
-    "cheerio": "^1.0.0",
-    "next": "14.2.15",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "typescript": "^5"
+    "turbo": "^1.10.12"
   }
 }

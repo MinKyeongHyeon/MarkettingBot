@@ -1,6 +1,54 @@
 import * as cheerio from "cheerio";
 import { NextRequest, NextResponse } from "next/server";
 
+// Simple IP/CIDR checks without extra deps
+function isIpv4(host: string) {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+}
+
+function isIpv6(host: string) {
+  return host.includes(":");
+}
+
+function ipv4ToInt(ip: string) {
+  return ip
+    .split('.')
+    .map((b) => parseInt(b, 10))
+    .reduce((acc, val) => (acc << 8) + (val & 0xff), 0) >>> 0;
+}
+
+function isPrivateIpv4(ip: string) {
+  try {
+    const v = ipv4ToInt(ip);
+    const ranges: Array<[number, number]> = [
+      [ipv4ToInt('10.0.0.0'), ipv4ToInt('10.255.255.255')],
+      [ipv4ToInt('172.16.0.0'), ipv4ToInt('172.31.255.255')],
+      [ipv4ToInt('192.168.0.0'), ipv4ToInt('192.168.255.255')],
+      [ipv4ToInt('127.0.0.0'), ipv4ToInt('127.255.255.255')],
+      [ipv4ToInt('169.254.0.0'), ipv4ToInt('169.254.255.255')],
+      [ipv4ToInt('0.0.0.0'), ipv4ToInt('0.255.255.255')],
+    ];
+    return ranges.some(([a, b]) => v >= a && v <= b);
+  } catch {
+    return false;
+  }
+}
+
+function isPrivateIpv6(host: string) {
+  const lh = host.toLowerCase();
+  if (lh === '::1') return true;
+  if (lh.startsWith('fe80:')) return true; // link-local
+  if (lh.startsWith('fc') || lh.startsWith('fd')) return true; // ULA
+  return false;
+}
+
+const FORBIDDEN_HOSTNAMES = new Set([
+  'localhost',
+  'ip6-localhost',
+  '0.0.0.0',
+  '169.254.169.254', // cloud metadata
+]);
+
 function normalizeUrl(input: string): string {
   const trimmed = input.trim().replace(/^\/+|\/+$/g, "");
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
@@ -26,6 +74,33 @@ export async function GET(request: NextRequest) {
   }
 
   const url = normalizeUrl(domain);
+  // Basic input validation
+  if (url.length > 2048) {
+    return NextResponse.json({ error: "URL이 너무 깁니다." }, { status: 400 });
+  }
+
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return NextResponse.json({ error: "유효하지 않은 URL입니다." }, { status: 400 });
+  }
+
+  // Immediate hostname blacklist
+  if (FORBIDDEN_HOSTNAMES.has(hostname)) {
+    return NextResponse.json({ error: "차단된 호스트입니다." }, { status: 403 });
+  }
+
+  // If hostname is an IP literal, block private ranges
+  if (isIpv4(hostname)) {
+    if (isPrivateIpv4(hostname)) {
+      return NextResponse.json({ error: "사설망/루프백 주소 차단" }, { status: 403 });
+    }
+  } else if (isIpv6(hostname)) {
+    if (isPrivateIpv6(hostname)) {
+      return NextResponse.json({ error: "사설망/루프백 주소 차단" }, { status: 403 });
+    }
+  }
   let html: string;
 
   try {
